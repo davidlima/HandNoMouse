@@ -1,3 +1,4 @@
 # HandNoMouse
 Mediante el uso de 2 cámaras y con visión Estereoscópica se procesa para interactuar con el ordenador como mouse virtual
-<img src="https://raw.githubusercontent.com/davidlima/HandNoMouse/main/capturas/Main0.gif"/> 
+
+<img src="https://github.com/davidlima/HandNoMouse/blob/main/capturas/Main0.gif" /> 
