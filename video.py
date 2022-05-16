@@ -20,31 +20,44 @@ from PyQt5.QtWidgets import QMessageBox
 
 import concurrent.futures
 
-tam_video_x=1920
-tam_video_y=1080
+tam_video_x=640
+tam_video_y=480
+# tam_video_x=1920
+# tam_video_y=1080
 
 
-
-def Captura_video_(frame_num,camara_num,DataProcess,flag_ProcessCaptureDone):
+def Captura_video_(frame_num,camara_num,DataProcess,flag_VideoProcessCaptureDone):
     #DataProcess["log_write_{}".format(camara_num)]=['']*100
     DataProcess["index_write_{}".format(camara_num)]=-1
     DataProcess["index_read_{}".format(camara_num)]=-1
-    cap=cv2.VideoCapture(camara_num)#,cv2.CAP_ANY)#CAP_ANY )#CAP_DSHOW)
-    #cap=cv2.VideoCapture(camara_num,cv2.CAP_DSHOW)
+    cap=cv2.VideoCapture(camara_num,cv2.CAP_DSHOW)#CAP_ANY )#cv2.CAP_DSHOW)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+    
+    
     width=tam_video_x#640#1920
     height=tam_video_y#480#1080
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    cap.set(cv2.CAP_PROP_FPS, 30)###no necesario
+    cap.set(cv2.CAP_PROP_FPS, 60)###no necesario
+    
+    
     texto="Inicialización capturadora de video...{} realizada".format(camara_num)
  #   DataProcess['log_Procesa_capture_']+="\n"+texto
 
     write_log(DataProcess,camara_num,texto)
- 
+    
+
+    FPS = 1/60
+    TimeWorking=0
+    TimeSleeping=0
+    t_start = time.time()
+    t_start2= time.time()
+    contador=totalTime=last_contador=0
     while DataProcess['run']:#run:
-        if flag_ProcessCaptureDone.value==False:
+        if flag_VideoProcessCaptureDone.value==False:
             
             resultado,frame=cap.read()
+
             if resultado==False:
                 #print("break1 ",camara_num)
                 write_log(DataProcess,camara_num,"break")
@@ -53,12 +66,33 @@ def Captura_video_(frame_num,camara_num,DataProcess,flag_ProcessCaptureDone):
                 break
             else:
                 DataProcess['frame{}'.format(frame_num)]=frame
+                ###############calculo de fps####################
+                t_end2= time.time()
+                contador+=1
+                totalTime += t_end2 - t_start2
+                t_start2=t_end2
+                if totalTime>1:
+                    last_contador=contador
+                    contador=totalTime=0
+
                 
-                flag_ProcessCaptureDone.value=True
-                
-                time.sleep(1/300)
+                flag_VideoProcessCaptureDone.value=True
+                t_end = time.time()
+                TimeWorking += t_end - t_start
+                t_start = t_end
+                time.sleep(FPS)
+                t_end = time.time()
+                TimeSleeping += t_end - t_start
+                t_start = t_end
+                if (TimeSleeping+TimeWorking)>1:
+                    DataProcess['core{}'.format(camara_num)]=TimeWorking*100/(TimeSleeping+TimeWorking)
+                    DataProcess['core{}estado'.format(camara_num)]="Core {}: ON --> {:3.1f}% {}FPS  Proceso:Captura_video_({})".format(camara_num+1,DataProcess['core{}'.format(camara_num)],last_contador,camara_num)
+                    TimeSleeping=0
+                    TimeWorking=0
+                    
 
     cap.release()
+    
     
 
   
@@ -71,26 +105,26 @@ class ZoomClass:
     def zoom(self, factor,x, y):
         x=int(x)
         y=int(y)
-        print("({},{})".format(x,y),end="\r")
+        # print("({},{})".format(x,y),end="\r")
             #while True:
         # #print(x,y)
-        # if self.mag.MagInitialize():
-        #     #print("ok")
-        #     self.mag.MagSetFullscreenTransform(factor, x, y)
+        if self.mag.MagInitialize():
+            #print("ok")
+            self.mag.MagSetFullscreenTransform(factor, x, y)
             
-        #     # print("resultado=",result)
-        #     # aa=result
-        #     # if result:    
-        #     #     fInputTransformEnabled = self.mag.PBOOL()
-        #     #     rcInputTransformSource = self.mag.LPRECT()
-        #     #     rcInputTransformDest = self.mag.LPRECT()
+            # print("resultado=",result)
+            # aa=result
+            # if result:    
+            #     fInputTransformEnabled = self.mag.PBOOL()
+            #     rcInputTransformSource = self.mag.LPRECT()
+            #     rcInputTransformDest = self.mag.LPRECT()
 
-        #         # if self.mag.MagGetInputTransform(fInputTransformEnabled, rcInputTransformSource, rcInputTransformDest):
-        #         # #if self.mag.MagGetInputTransform(ctypes.byref(fInputTransformEnabled), ctypes.byref(rcInputTransformSource), ctypes.byref(rcInputTransformDest)):
-        #         # # fails here
-        #         #     print("Success")
-        #         # else:
-        #         #     print("Failed")
+                # if self.mag.MagGetInputTransform(fInputTransformEnabled, rcInputTransformSource, rcInputTransformDest):
+                # #if self.mag.MagGetInputTransform(ctypes.byref(fInputTransformEnabled), ctypes.byref(rcInputTransformSource), ctypes.byref(rcInputTransformDest)):
+                # # fails here
+                #     print("Success")
+                # else:
+                #     print("Failed")
     def exit(self):
          # usado para finalizar...no necesario
         self.mag.MagUninitialize()

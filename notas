@@ -1,0 +1,6 @@
+from cv2 import recoverPose
+
+
+flip
+
+falla al afinar--->posible necesidad de try camara detras...recoverPose

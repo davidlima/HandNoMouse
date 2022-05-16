@@ -2,8 +2,8 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsDropShadowEffect,QSystemTrayIcon
 from PyQt5.QtCore import  QPropertyAnimation,QEasingCurve
 from PyQt5.QtGui  import QColor,QIcon
-#from PyQt5.QtGui import * 
-#from PyQt5.QtWidgets import * 
+#from PyQt5.QtGui import *
+#from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtWidgets,QtGui
 from PyQt5.QtWidgets import QFileDialog,QMessageBox
 from PyQt5.Qt import Qt
@@ -11,6 +11,7 @@ from PyQt5.Qt import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+
 
 from PyQt5.uic import loadUi
 import threading
@@ -29,18 +30,20 @@ from imutils.video import FPS
 import config
 import pyautogui
 from extras import read_log,write_log
+from PySide2 import QtCore
+from math import fabs
 
 from ctypes import pythonapi
 
 
 class VentanaPrincipal(QMainWindow):
-    
+
     arg_={'run':True}
-    
-    cpu_count=0
+
+    #cpu_count=0
     def __init__(self):
-        global cpu_count
-        
+        #global cpu_count
+
         self.cont_idle=0
         self.cont_timer=0
         self.last_visible=False
@@ -49,20 +52,24 @@ class VentanaPrincipal(QMainWindow):
         loadUi(self.path+'menu1.ui', self)
         self.arg_.update({'self':self})
         self.arg_.update({'visible':True})
-        self.setWindowIcon(QIcon(self.path+'hand2.png'))    
+        self.setWindowIcon(QIcon(self.path+'hand2.png'))
         self.main_proceso=2##proceso equivalente utilizado para almacenar texto y compartir entre multiples procesos
+        self.flag_capture=None
+        self.tmp_color=0#Variable para alternar colores de las letras entre blanco y negro
 
         self.trayIcon = QSystemTrayIcon(QIcon(self.path+'hand2.png'), self)
         self.trayIcon.activated.connect(self.control_bt_systemtrayicon)
         self.trayIcon.show()
         self.trayIcon.setToolTip("TFM VIU HandNoMouse")
+        self.pageOn=1
+        self.max=0
 
-        
-         
 
- 
-        cpu_count = mp.cpu_count()
-        process = list(range(cpu_count))    ##numero de nucleos disponibles!!                                                                                                                                                
+
+
+
+        self.cpu_count = mp.cpu_count()
+        process = list(range(self.cpu_count))    ##numero de nucleos disponibles!!
         process=dict.fromkeys(process, False)
 
         self.totalOn=0###Tiempo total de ejecución
@@ -75,6 +82,8 @@ class VentanaPrincipal(QMainWindow):
 
         self.DataProcess = Manager() .dict()
         self.FlagProcess = Manager() .dict()
+        self.DataProcess['weight']=1920
+        self.DataProcess['height']=1080
         #self.DataProcess['exit']=False
 
         self.DataProcess["index_write_{}".format(self.main_proceso)]=-1
@@ -88,48 +97,49 @@ class VentanaPrincipal(QMainWindow):
         self.tmp=0
 
 
-        
-        self.visualizador3d=Canvas_(self,self.DataProcess)
-        self.page3_layout1.addWidget(self.visualizador3d)
-        
+        self.canvas = FigureCanvas(plt.Figure(figsize=(15, 6)))
+        self.page3_layout1.addWidget(self.canvas)
+        self.insert_ax_tabla_cores()
 
-        
+
+
 
         self.calibracion=Calculo_3D_(self.DataProcess,self.main_proceso)
-        self.DataProcess['Calibracion_inicial']=self.calibracion.LoadCalibracion(self)
+        self.DataProcess['Calibracion_inicial_']=self.calibracion.LoadCalibracion(self)
         self.DataProcess['calibracion']=[self.calibracion]
-        self.DataProcess['Calibracion_Vectores_xy_teclado_mouse']=self.calibracion.calibracion_recuperada
-        
+        self.DataProcess['Calibracion_Vectores_xy_teclado_mouse_']=self.calibracion.calibracion_recuperada
+
         #self.calibracion.LoadCalibracion_xy()
 
         try:
-            
+
             t=np.load("calibracion\\Calibración_size_cam.npy",allow_pickle=True)
             self.DataProcess['croping0']=t[0]['0']
             self.DataProcess['croping1']=t[0]['1']
             self.DataProcess['croping']=True
             write_log(self.DataProcess,self.main_proceso,"Lectura del archivo Calibración_size_cam.npy correcto")
         except:
-            QMessageBox.about(self, "Archivo Calibración_size_cam.npy no encontrado!", "Se requiere ir al apartado de calibración para generar un nuevo archivo")
-            write_log(self.DataProcess,self.main_proceso,"Error leyendo archivo Calibración_size_cam.npy")
+            QMessageBox.about(self, "Archivo Calibración_size_cam.npy no encontrado!", "Se requiere ir al apartado de calibración sección Afinar tamaño para generar un nuevo archivo")
+            write_log(self.DataProcess,self.main_proceso,"Error Archivo Calibración_size_cam.npy no encontrado!")
+            write_log(self.DataProcess,self.main_proceso,"Se requiere ir al apartado de calibración sección Afinar tamaño para generar un nuevo archivo")
             self.DataProcess['croping']=False
 
         #self.DataProcess['log1']=['']
-        
+
 
         self.flag_MainProcess=False#Value('i',False)
-        self.flag_ProcessCaptureDone_0=False#Value('i',-1)
-        self.flag_ProcessCaptureDone_1=False#Value('i',-1)
-        self.flag_ProcessCaptureDone=False#Value('i',False)
+        self.flag_VideoProcessCaptureDone_0=False#Value('i',-1)
+        self.flag_VideoProcessCaptureDone_1=False#Value('i',-1)
+        self.flag_ProcessAnalisisWork=False#Value('i',False)
         self.flag_ProcessAnalisisDone_0=False#Value('i',-1)
         self.flag_ProcessAnalisisDone_1=False#Value('i',-1)
         self.flag_ProcessAnalisisDone=False#Value('i',False)
         self.flag_Show=Value('i',False)
 
         self.FlagProcess['flag_MainProcess']=self.flag_MainProcess
-        self.FlagProcess['flag_ProcessCaptureDone_0']=self.flag_ProcessCaptureDone_0
-        self.FlagProcess['flag_ProcessCaptureDone_1']=self.flag_ProcessCaptureDone_1
-        self.FlagProcess['flag_ProcessCaptureDone']=self.flag_ProcessCaptureDone
+        self.FlagProcess['flag_VideoProcessCaptureDone_0']=self.flag_VideoProcessCaptureDone_0
+        self.FlagProcess['flag_VideoProcessCaptureDone_1']=self.flag_VideoProcessCaptureDone_1
+        self.FlagProcess['flag_ProcessAnalisisWork']=self.flag_ProcessAnalisisWork
         self.FlagProcess['flag_ProcessAnalisisDone_0']=self.flag_ProcessAnalisisDone_0
         self.FlagProcess['flag_ProcessAnalisisDone_1']=self.flag_ProcessAnalisisDone_1
         self.FlagProcess['flag_ProcessAnalisisDone']=self.flag_ProcessAnalisisDone
@@ -153,15 +163,15 @@ class VentanaPrincipal(QMainWindow):
         self.page5_bt5.setToolTip("<h3>Chess Board Matrix. Imágenes previamente guardadas en el directorio de calibración son analizadas para encontrar la matriz propia de las cámaras<\h3>")
 
 
-        
 
 
 
-        
-        
+
+
+
         self.arg_.update({'core':process})
-        self.arg_.update({'flag_DoThread':[False,False]})     
-        self.page3_lb1.setText("Núm Cores disponibles: {}".format(cpu_count))
+        self.arg_.update({'flag_DoThread':[False,False]})
+        self.page3_lb1.setText("NÚMERO DE CORES DISPONIBLES: {}".format(self.cpu_count))
         self.bt1.setEnabled(False)
         self.bt_last=self.bt1
         # timer = QtCore.QTimer()
@@ -192,7 +202,7 @@ class VentanaPrincipal(QMainWindow):
 
         self.tmp=0
 
-        
+
         # mover ventana
         self.frame_superior.mouseMoveEvent = self.mover_ventana
         self.bt1.clicked.connect(self.fn_page1)#lambda: self.stackedWidget.setCurrentWidget(self.page1))
@@ -209,27 +219,38 @@ class VentanaPrincipal(QMainWindow):
         self.page1_ck1.stateChanged.connect(self.fn_page1_ck1)
         self.page1_ck_zoom.clicked.connect(self.fn_page1_ck_zoom)
         self.page1_ck_DoSomething.clicked.connect(self.fn_page1_ck_DoSomething)
-        
+
         ####PAGE2
         self.page2_bt1.clicked.connect(self.fn_page2_bt1)
 
         ####PAGE5
-        self.page5_bt1.clicked.connect(self.fn_page5_bt1)        
-        self.page5_bt2.clicked.connect(self.fn_page5_bt2)        
-        self.page5_bt3.clicked.connect(self.fn_page5_bt3)        
-        self.page5_bt4.clicked.connect(self.fn_page5_bt4)        
-        self.page5_bt5.clicked.connect(self.fn_page5_bt5)        
-        
-        
-        
-        self.bt_minimizar.clicked.connect(self.control_bt_minimizar)		
+        self.page5_bt1.clicked.connect(self.fn_page5_bt1)
+        self.page5_bt2.clicked.connect(self.fn_page5_bt2)
+        self.page5_bt3.clicked.connect(self.fn_page5_bt3)
+        self.page5_bt4.clicked.connect(self.fn_page5_bt4)
+        self.page5_bt5.clicked.connect(self.fn_page5_bt5)
+
+
+
+        self.bt_minimizar.clicked.connect(self.control_bt_minimizar)
         self.bt_restaurar.clicked.connect(self.control_bt_normal)
         self.bt_maximizar.clicked.connect(self.control_bt_maximizar)
         self.bt_cerrar.clicked.connect(self.control_bt_exit)#self.close())
 
 
+    def insert_ax_tabla_cores(self):
+        font = {
+            'weight': 'normal',
+            'size': 16
+        }
+        plt.rc('font', **font)
 
-        
+        self.ax = self.canvas.figure.subplots()
+        self.ax.set_ylim([0, 100])
+        self.ax.set_xlim([0, 12])
+        self.bar = None
+        self.ax.set_title('Cores',size=9)
+
     def keyPressEvent(self,event):
         #print("OK.",event.text())#event.key())
         pass
@@ -238,42 +259,49 @@ class VentanaPrincipal(QMainWindow):
         self.bt1.setEnabled(False)
         self.bt_last.setEnabled(True)
         self.bt_last=self.bt1
+        self.pageOn=1
     def fn_page2(self):
         self.stackedWidget.setCurrentWidget(self.page2)
         self.bt2.setEnabled(False)
         self.bt_last.setEnabled(True)
         self.bt_last=self.bt2
+        self.pageOn=2
     def fn_page3(self):
         self.stackedWidget.setCurrentWidget(self.page3)
         self.bt3.setEnabled(False)
         self.bt_last.setEnabled(True)
         self.bt_last=self.bt3
+        self.pageOn=3
     def fn_page4(self):
         self.stackedWidget.setCurrentWidget(self.page4)
         self.bt4.setEnabled(False)
         self.bt_last.setEnabled(True)
         self.bt_last=self.bt4
+        self.pageOn=4
     def fn_page5(self):
         self.stackedWidget.setCurrentWidget(self.page5)
         self.bt5.setEnabled(False)
         self.bt_last.setEnabled(True)
         self.bt_last=self.bt5
+        self.pageOn=5
     def fn_page6(self):
         self.stackedWidget.setCurrentWidget(self.page6)
         self.bt6.setEnabled(False)
         self.bt_last.setEnabled(True)
         self.bt_last=self.bt6
+        self.pageOn=6
     def fn_page7(self):
         self.stackedWidget.setCurrentWidget(self.page7)
         self.bt7.setEnabled(False)
         self.bt_last.setEnabled(True)
         self.bt_last=self.bt7
-    
-        
+        self.pageOn=7
+
+
 
 
     def control_bt_exit(self):
-        
+
         #self.arg_['run']=False
         self.DataProcess['run']=False
         self.zoom_.exit()
@@ -282,15 +310,15 @@ class VentanaPrincipal(QMainWindow):
         self.close()
         #sys.exit()
     def control_bt_minimizar(self):
-        self.showMinimized()		
+        self.showMinimized()
         self.hide()
     def control_bt_systemtrayicon(self):
         self.show()
-        self.control_bt_normal()		
-        
-        
+        self.control_bt_normal()
 
-    def  control_bt_normal(self): 
+
+
+    def  control_bt_normal(self):
         if self.arg_['visible']:
             self.arg_['visible']=False
             self.last_visible=True
@@ -298,13 +326,13 @@ class VentanaPrincipal(QMainWindow):
            # time.sleep(0.2)
             t=1
         else:t=0
-        self.showNormal()		
+        self.showNormal()
         self.bt_restaurar.hide()
         self.bt_maximizar.show()
         self.arg_['window_width']=self.page1_lb0.width()
         if t==1:self.arg_['visible']=True
 
-    def  control_bt_maximizar(self): 
+    def  control_bt_maximizar(self):
         if self.arg_['visible']:
             self.arg_['visible']=False
             self.last_visible=True
@@ -327,8 +355,8 @@ class VentanaPrincipal(QMainWindow):
             self.cont_idle=0
           #  time.sleep(0.3)
 
-            
-        
+
+
         width = self.frame_lateral.width()
         normal = 0
         if width==0:
@@ -337,15 +365,15 @@ class VentanaPrincipal(QMainWindow):
         else:
             extender = normal
             self.bt_menu.setIcon(QIcon(self.path+'show_menu.png'))
-        
+
         self.animacion = QPropertyAnimation(self.frame_lateral, b'minimumWidth')
         self.animacion.setDuration(800)
         self.animacion.setStartValue(width)
         self.animacion.setEndValue(extender)
         self.animacion.setEasingCurve(QtCore.QEasingCurve.InOutQuart)
         self.animacion.start()
-        
-        
+
+
 
     ## SizeGrip
     def resizeEvent(self, event):
@@ -368,7 +396,7 @@ class VentanaPrincipal(QMainWindow):
         self.clickPosition = event.globalPos()
 
     def mover_ventana(self, event):
-        if self.isMaximized() == False:			
+        if self.isMaximized() == False:
             if event.buttons() == QtCore.Qt.LeftButton:
                 self.move(self.pos() + event.globalPos() - self.clickPosition)
                 self.clickPosition = event.globalPos()
@@ -400,11 +428,11 @@ class VentanaPrincipal(QMainWindow):
             pass
 
         try:
-            #print(self.DataProcess['log_Procesa_frames_'])
-            #if len(self.DataProcess['log_Procesa_frames_'])>0:
-            
-            tmp=self.DataProcess['log_Procesa_frames_']
-            
+            #print(self.DataProcess['log_Procesa_3D_'])
+            #if len(self.DataProcess['log_Procesa_3D_'])>0:
+
+            tmp=self.DataProcess['log_Procesa_3D_']
+
             self.x_final=(tmp[0])
             self.y_final=(tmp[1])
             self.z_final=(tmp[2])
@@ -416,13 +444,13 @@ class VentanaPrincipal(QMainWindow):
 
 
             #texto="(x={:.2f}, y={:.2f}, z={:.2f}) {}".format(tmp[0],tmp[1],tmp[2],texto)
-            
+
             #  texto="(x={:.2f}, y={:.2f}, z={:.2f}) ".format(x*c,y*c,z*c)
-            
+
             #texto="(x={:.2f}, y={:.2f}, z={:.2f}) {}".format(self.x_last,self.y_last,self.z_last,texto)
             #texto="(x={:.2f},{:.2f} y={:.2f},{:.2f} z={:.2f},{:.2f}) ".format(self.x_last,self.x_final,self.y_last,self.y_final,self.z_last,self.z_final)
-            
-            
+
+
 
             if self.x_last!=self.x_final or self.y_last!=self.y_final or self.z_last!=self.z_final:
                 self.fps2.stop()
@@ -442,12 +470,17 @@ class VentanaPrincipal(QMainWindow):
                 yy=y*y
                 if x<0:xx=-xx
                 if y<0:yy=-yy
+                if fabs(xx)<2:xx=0
+                if fabs(yy)<2:yy=0
                 self.xx=int(xx)
                 self.yy=int(yy)
-                self.zz=int(z)
+                self.zz=self.z_final
                # texto="(x={}, y={}, z={} {}) ".format(self.xx,self.yy,self.zz,texto)
                 #texto="(x={:3.2f}, y={:3.2f}, z={:3.2f} ) ".format(x,y,z)
-                texto="(x={:3.2f}, y={:3.2f}, z={:3.2f} ) ".format(self.x_last,self.y_last,self.z_last)
+                texto="(x={:3.1f}, y={:3.1f}, z={:3.1f} ) ".format(self.x_final,self.y_final,self.z_final)
+                
+                #if self.zz>self.max:self.max=self.zz
+                texto="( xx={}, yy={}, zz={:3.1f}  ) ".format(self.xx,self.yy,self.zz)
                 #print(texto)
                 self.frame_inferior_lb3.setText(texto)
                 self.x_last=self.x_final
@@ -457,7 +490,7 @@ class VentanaPrincipal(QMainWindow):
 
 
             #if len(self.DataProcess['log_pos_cube_xyz_'])>0:
-            
+
             #self.frame_inferior_lb3.setText(str(self.DataProcess['log_pos_cube_xyz_']))
         except:
             pass
@@ -469,58 +502,77 @@ class VentanaPrincipal(QMainWindow):
             cord_x,cord_y=pyautogui.position()
            # x,y=pyautogui.size()
            # print(x,y,cord_x,cord_y)
-
-            #pyautogui.moveTo(cord_x-self.xx,cord_y-self.yy)
+            x_=cord_x-self.xx
+            y_=cord_y-self.yy
+           # if x_<0:x_=0
+            if x_<1920:x_=1920
+            if y_<0:y_=0
+            #if x_>self.DataProcess['weight']:x_=self.DataProcess['weight']-1
+            if x_>(1920+1680):x_=(1920+1680-1)
+            
+            if y_>self.DataProcess['height']:y_=self.DataProcess['height']-1
+            #print(x_,y_)
+            pyautogui.FAILSAFE = False
+            pyautogui.moveTo(x_,y_)
 
 
 
            # print(self.totalOn,self.totalOn%3000)
        #     if self.totalOn%3000==0:
-        #    pos = pyautogui.position()
-        #    self.zoom_.zoom(factor_zoom, pos[0], pos[1])
-            factor_zoom=2.0
+            pos = pyautogui.position()
+            if self.zz<1:
+                factor_zoom=1.0
+            else: 
+                if self.zz>5:tmp_z=5.
+                else:tmp_z=self.zz
+                factor_zoom=(tmp_z/5.)+1
+
+            #print("Z=",factor_zoom)
+            self.zoom_.zoom(factor_zoom, pos[0], pos[1])
+            #factor_zoom=2.0
             #texto_="({},{})".format(pos[0],pos[1])
             #print(texto_)
-            if self.x_final!=0 and self.y_final!=0:
-                self.zoom_.zoom(factor_zoom, self.x_final,self.y_final)
+
+            # if self.x_final!=0 and self.y_final!=0:
+            #     self.zoom_.zoom(factor_zoom, self.x_final,self.y_final)
 
         if self.cont_timer>500:
             read_log(self.DataProcess)##########################################
             self.show_log()
-            
-            
-            # if self.totalOn>40000:##########################cerrar tras 20 segundos
-            #     self.control_bt_exit()
+
+
+            if self.totalOn>40000:##########################cerrar tras 20 segundos
+                self.control_bt_exit()
             self.showTime()
             self.cont_timer=0
-            
+
 
             # try:
             #     if len(self.DataProcess['log_Procesa_capture_'])>0:self.frame_inferior_lb2.setText(self.DataProcess['log_Procesa_capture_'])
             # except:
             #     pass
-                
+
             for _ in config.log_.keys():
                 if len(config.log_[_])>0:
                     print("-->",config.log_[_])
                     config.log_text__+=config.log_[_]
                     config.log_[_]=''
            # self.page1_tEdit1.setText(str(config.log_))#text__)
-        if self.flag_Show.value:# and self.flag_ProcessCaptureDone_1.value:
+        if self.flag_Show.value:# and self.flag_VideoProcessCaptureDone_1.value:
           #  self.flag_Show.value=False
             self.t_end = time.time()
             totalTime = self.t_end - self.t_start
             self.t_start = time.time()
-            
+
             if self.arg_['visible']:
                 self.fn_show_captured_windows()
-                
+
                 #self.FlagProcess['flag_Show']=0
             else:
                 self.page1_lb0.setText("X")
                 self.page1_lb1.setText("X")
 
-                
+
             # if totalTime>0:
             #     self.frame_inferior_lb2.setText('{:3d} FPS'.format(int(1//totalTime)))
             # else:
@@ -531,26 +583,35 @@ class VentanaPrincipal(QMainWindow):
             # else:
             #      self.frame_inferior_lb2.setText(' -  FPS')
             # self.fps.start()
-            
+
 
 
     def showTime(self):
-        global cpu_count
-        
+
+
         time=QDateTime.currentDateTime()
         #timeDisplay=time.toString('dddd dd/MM/yyyy hh:mm:ss ')
         timeDisplay=time.toString(' hh:mm:ss ')
         # pos = pyautogui.position()
         # timeDisplay="({},{})".format(pos[0],pos[1])
         # print(timeDisplay)
-        self.frame_inferior_lb1.setText(timeDisplay)
-        texto=""
-        #print(cpu_count)
-        for _ in range(cpu_count):
-            #print(_)
-            texto+="Core {}: {}\n".format(_+1,self.arg_['core'][_])
-        self.page3_lb2.setText(texto)
         
+        timeDisplay="{:3.1f} {}".format(self.totalOn/1000.,timeDisplay)
+        self.frame_inferior_lb1.setText(timeDisplay)
+
+        ######graficas cores##########################
+        if self.pageOn==3:
+            texto=""
+            self.update_tabla_cores()
+            for _ in range(self.cpu_count):
+                try:
+                    texto+="{}\n".format(self.DataProcess['core{}estado'.format(_)])
+                except:
+                    texto+="Core {}: OFF\n".format(_+1)
+                self.page3_lb2.setText(texto)
+
+
+
         self.cont_idle+=1
         if self.cont_idle>1 and self.last_visible:
             self.last_visible=False
@@ -564,7 +625,7 @@ class VentanaPrincipal(QMainWindow):
             print("False")
             pos = pyautogui.position()
             self.zoom_.zoom(1.0,0,0)# pos[0], pos[1])
-        
+
 
       #  cam0=self.page1_cBox0.currentText()
 
@@ -575,6 +636,8 @@ class VentanaPrincipal(QMainWindow):
             #print("t=",self.DataProcess[1])
             #print("t=",t)
             np.save('calibracion\\Calibración_size_cam.npy',np.array(t))#,dtype=object))
+            self.DataProcess['run']=False
+            self.DataProcess['exit']=True
         except:
             write_log(self.DataProcess,self.main_proceso,"fn_page1_ck_DoSomething - error")
     def fn_page1_bt1(self):      #Bóton visible ON/OFF
@@ -590,22 +653,22 @@ class VentanaPrincipal(QMainWindow):
 
 
         camara_num=0
-        # manager = Manager() 
+        # manager = Manager()
         # DataProcess = manager.dict()
     #    DataProcess['frame']=frame#arg[1][0]['frame']
 #        self.DataProcess['run']=True#self.arg[1][0]['run']
         #DataProcess['flag_DoThread'][camara_num]=arg[1][0]['flag_DoThread']
         self.DataProcess['camara_num']=camara_num
         self.DataProcess['core']=True
-        
 
-   
+
+
         cam0=int(self.page1_cBox0.currentText())
         cam1=int(self.page1_cBox1.currentText())
-        
-        P0=Process(target=MainProcess_, args=([cam0,cam1],self.DataProcess,self.flag_Show)).start()
 
-    ##############PAGE1  
+        P0=Process(target=MainProcess_, args=([cam0,cam1],self.DataProcess,self.flag_Show,self.flag_capture)).start()
+
+    ##############PAGE1
     def fn_page1_ck1(self,state):
        # print("state",state)
         if state == 2:
@@ -629,7 +692,7 @@ class VentanaPrincipal(QMainWindow):
         # dlg.setFileMode(QFileDialog.AnyFile)
         # dlg.setFilter("Text files (*.txt)")
         # filenames = QStringList()
-		
+
         # if dlg.exec_():
         #     filenames = dlg.selectedFiles()
         #fname = QFileDialog.getOpenFileName(self, 'Open file', 'c:\\',"Image files (*.jpg *.gif)")
@@ -651,9 +714,10 @@ class VentanaPrincipal(QMainWindow):
         buttonN.setText('Cancelar')
         box.exec_()
         if box.clickedButton() == buttonY:
+            self.flag_capture='Calibracion_inicial_'
             self.DataProcess['run']=False
             print("Si")
-            self.DataProcess['Calibracion_inicial']=False
+            self.DataProcess['Calibracion_inicial_']=False
             self.fn_page1()
             time.sleep(0.1)
             self.fn_page1_bt1()
@@ -671,10 +735,11 @@ class VentanaPrincipal(QMainWindow):
         buttonN.setText('Cancelar')
         box.exec_()
         if box.clickedButton() == buttonY:
+            self.flag_capture='Calibracion_Vectores_xy_teclado_mouse_'
             print("Calibración aceptada 2")
             self.DataProcess['run']=False
             print("Si")
-            self.DataProcess['Calibracion_Vectores_xy_teclado_mouse']=False
+            self.DataProcess['Calibracion_Vectores_xy_teclado_mouse_']=False
             self.fn_page1()
             time.sleep(0.1)
             self.fn_page1_bt1()
@@ -709,6 +774,7 @@ class VentanaPrincipal(QMainWindow):
         buttonN.setText('Cancelar')
         box.exec_()
         if box.clickedButton() == buttonY:
+            self.flag_capture='Calibracion_cropping_'
             self.page1_ck_DoSomething.show()
             print("Si")
             self.DataProcess['croping']=False
@@ -717,7 +783,7 @@ class VentanaPrincipal(QMainWindow):
             self.fn_page1_bt1()
         elif box.clickedButton() == buttonN:
             print("No")
-    
+
     def fn_page5_bt5(self):
         QMessageBox.about(self,"Chess Board Matrix","Imágenes previamente guardadas en el directorio de calibración son analizadas para encontrar la matriz propia de las cámaras")
     def fn_show_captured_windows(self):
@@ -732,31 +798,48 @@ class VentanaPrincipal(QMainWindow):
         down_points = (down_width, down_height)
         try:
             if self.DataProcess['run']:
-                if self.page1_ck_procesado.isChecked():
-                    frame0 = cv2.resize(self.DataProcess['frame0_procesado'], down_points, interpolation= cv2.INTER_LINEAR)
-                    frame1 = cv2.resize(self.DataProcess['frame1_procesado'], down_points, interpolation= cv2.INTER_LINEAR)
+                if self.pageOn==1:
+                    if self.page1_ck_procesado.isChecked():
+                        frame0 = cv2.resize(self.DataProcess['frame0_procesado'], down_points, interpolation= cv2.INTER_LINEAR)
+                        frame1 = cv2.resize(self.DataProcess['frame1_procesado'], down_points, interpolation= cv2.INTER_LINEAR)
 
-                else:
-                    frame0 = cv2.resize(self.DataProcess['frame0_read'], down_points, interpolation= cv2.INTER_LINEAR)
-                    frame1 = cv2.resize(self.DataProcess['frame1_read'], down_points, interpolation= cv2.INTER_LINEAR)
-                height, width, channel = frame0.shape
-                step = channel * width
-                self.fps.stop()
-                if self.fps.elapsed()>0:
-                    texto="{:3d} FPS".format(int(1//self.fps.elapsed()))
-                else:
-                    texto=' -  FPS'
-                self.fps.start()
-                # create QImage from image
-                frame2=cv2.cvtColor(frame0,cv2.COLOR_BGR2RGB)
-                qImg= QImage(frame2.data, width, height, step, QImage.Format_RGB888)
-                cv2.putText(frame2, "Cam 0", (10, 20), cv2.FONT_HERSHEY_SIMPLEX,0.5, (255, 0, 0), 1, cv2.LINE_AA)
-                cv2.putText(frame2, texto, (10, 50), cv2.FONT_HERSHEY_SIMPLEX,0.5, (255, 0, 0), 1, cv2.LINE_AA)
-                self.page1_lb0.setPixmap(QPixmap.fromImage(qImg))
-                frame2=cv2.cvtColor(frame1,cv2.COLOR_BGR2RGB)
-                qImg= QImage(frame2.data, width, height, step, QImage.Format_RGB888)
-                cv2.putText(frame2, "Cam 1", (10, 20), cv2.FONT_HERSHEY_SIMPLEX,0.5, (255, 0, 0), 1, cv2.LINE_AA)
-                self.page1_lb1.setPixmap(QPixmap.fromImage(qImg))
+                    else:
+                        frame0 = cv2.resize(self.DataProcess['frame0_read'], down_points, interpolation= cv2.INTER_LINEAR)
+                        frame1 = cv2.resize(self.DataProcess['frame1_read'], down_points, interpolation= cv2.INTER_LINEAR)
+                    height, width, channel = frame0.shape
+                    step = channel * width
+                    self.fps.stop()
+                    if self.fps.elapsed()>0:
+                        texto="Analisis {:3d} FPS".format(int(1//self.fps.elapsed()))
+                    else:
+                        texto='Analisis  -  FPS'
+                    self.fps.start()
+                    if self.tmp_color>30:
+                        if self.tmp_color>60:
+                            self.tmp_color=0
+                        color_=(0,0,0)
+                    else:
+                        color_=(255,255,255)
+                    self.tmp_color+=1
+                    # create QImage from image
+                    frame2=cv2.cvtColor(frame0,cv2.COLOR_BGR2RGB)
+                    qImg= QImage(frame2.data, width, height, step, QImage.Format_RGB888)
+                    cv2.putText(frame2, "Cam 0", (10, 20), cv2.FONT_HERSHEY_SIMPLEX,0.5, (255, 0, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame2, texto, (10, 50), cv2.FONT_HERSHEY_SIMPLEX,0.5, (255, 0, 0), 1, cv2.LINE_AA)
+                    texto="Captura {:3d} FPS".format(self.DataProcess['FPS'])
+                    cv2.putText(frame2, texto, (10, 80), cv2.FONT_HERSHEY_SIMPLEX,0.5, color_, 1, cv2.LINE_AA)
+                    self.page1_lb0.setPixmap(QPixmap.fromImage(qImg))
+                    frame2=cv2.cvtColor(frame1,cv2.COLOR_BGR2RGB)
+                    qImg= QImage(frame2.data, width, height, step, QImage.Format_RGB888)
+                    texto="Captura {:3d} FPS".format(self.DataProcess['FPS'])
+                    cv2.putText(frame2, texto, (10, 80), cv2.FONT_HERSHEY_SIMPLEX,0.5, color_, 1, cv2.LINE_AA)
+                    cv2.putText(frame2, "Cam 1", (10, 20), cv2.FONT_HERSHEY_SIMPLEX,0.5, (255, 0, 0), 1, cv2.LINE_AA)
+                    self.page1_lb1.setPixmap(QPixmap.fromImage(qImg))
+
+
+
+
+
             else:
                 self.page1_lb0.setText("X")
                 self.page1_lb1.setText("X")
@@ -764,6 +847,22 @@ class VentanaPrincipal(QMainWindow):
         except:
             pass
            # print("Error")
+    def update_tabla_cores(self):
+        if self.bar:self.bar.remove()
+        for _ in range(10):
+            try:
+                if _==2:
+                    value=50.
+                else:
+                    value = self.DataProcess['core{}'.format(_)]
+               # print("{}={}".format(_,value))
+                if value>50:color='r'
+                else: color='g'
+                self.bar = self.ax.bar([_+1], 100., width=0.8, color='w')
+                self.bar = self.ax.bar([_+1], value, width=0.8, color=color)
+            except:
+                pass
+        self.canvas.draw()
     def show_log(self):
         try:
             while self.DataProcess["index_write_{}".format(100)]!=-1 and self.DataProcess["index_read_{}".format(100)]<self.DataProcess["index_write_{}".format(100)]:
@@ -774,7 +873,7 @@ class VentanaPrincipal(QMainWindow):
                     indice=0
                 self.DataProcess["index_read_{}".format(100)]=indice
                 texto=self.DataProcess["log_write_{}_{}".format(100,indice)]
-                
+
                 #texto0=self.page1_tEdit1.toPlainText()
                 # print("0",texto0)
                 # print("1",texto)
@@ -782,59 +881,56 @@ class VentanaPrincipal(QMainWindow):
                 self.page1_tEdit1.moveCursor(QtGui.QTextCursor.End)
                 self.page4_lb1.setText(self.page1_tEdit1.toPlainText()+"\n"+texto)
                 self.page4_lb1.moveCursor(QtGui.QTextCursor.End)
-                
+
         except:
             pass
     ##########################################page6
 
 import plotly.graph_objects as go
 from PyQt5 import QtCore, QtWidgets, QtWebEngineWidgets
-class Canvas_(FigureCanvas):
+class Canvas_grafica_cores(FigureCanvas):
     def __init__(self,parent,DataProcess):
         self.parent=parent
         self.DataProcess=DataProcess
         self.fig,self.ax=plt.subplots(1,dpi=100,figsize=(5,5),sharey=True,facecolor='white')
         nombres=['Core 1','Core 2','Core 3','Core 4','Core 5']
         colores=['red','green','green','orange','orange']
-        tamaño=[95,40,42,75,70]
+        try:
+            tamaño=[int(DataProcess['core0']),40,42,75,70]
+        except:
+            tamaño=[95,40,42,75,70]
         self.ax.bar(nombres,tamaño,color=colores)
         self.fig.suptitle('Grafica',size=9)
-        
-        
+
+
         super().__init__(self.fig)
-        self.setParent(self.parent)
-       # self.browser = QtWebEngineWidgets.QWebEngineView(self)
-       # self.fig.update_layout(autosize=False,width=900,height=900)
-       # self.fig.show()
-    def draw_(self):
+        #self.setParent(self.parent)
+    def new_graf_(self):
+        self.fig.clear()
+        self.fig,self.ax=plt.subplots(1,dpi=100,figsize=(5,5),sharey=True,facecolor='white')
+        nombres=['Core 1','Core 2','Core 3','Core 4','Core 5']
+        colores=['red','green','green','orange','orange']
 
         try:
-        
-
-            # self.fig=go.Figure(data=[go.Scatter3d(x=self.DataProcess['cube_points'][:][0][0],y=self.DataProcess['cube_points'][:][1][0],z=self.DataProcess['cube_points'][:][2][0],
-            # mode='markers',marker=dict(size=5,color='red',opacity=0.5))])
-
-            # self.fig.update_traces(quartilemethod="exclusive") # or "inclusive", or "linear" by default
-            # self.browser.setHtml(self.fig.to_html(include_plotlyjs='cdn'))
-            self.fig=plt.plot(5,5)#self.DataProcess['cube_points'][:][0][0],self.DataProcess['cube_points'][:][1][0])
-
-
-
-        
-            
-           # self.browser.show()
-
-
-
-            # set the QWebEngineView instance as main widget
-            # self.setCentralWidget(plot_widget)
-            # self.page6_layout2..addWidget(self.visualizador3d)
-
-
-
+            tamaño=[int(self.DataProcess['core0']),40,42,75,70]
         except:
-            print("error draw()")
-            pass
+            tamaño=[95,40,42,75,70]
+        print(tamaño)
+        #self.ax.remove()
+        self.ax.bar(nombres,tamaño,color=colores)
+        self.fig.suptitle('Grafica',size=9)
+        # self.ax.update()
+        # self.ax.draw()
+
+        #self.draw()
+        self.fig.draw()
+        # self.ax.draw()
+        # self.ax.update()
+       # self.browser = QtWebEngineWidgets.QWebEngineView(self)
+       # self.fig.update_layout(autosize=False,width=900,height=900)
+
+
+
 
 import tkinter as tk
 if __name__ == "__main__":
@@ -845,6 +941,6 @@ if __name__ == "__main__":
     mi_app.show()
 
     app.exec_()
-    sys.exit(app.exec_())  
+    sys.exit(app.exec_())
 
 
